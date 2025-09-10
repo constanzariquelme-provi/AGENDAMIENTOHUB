@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Generador de hash (SHA-256) para PIN admin</title>
+<style>
+  :root{ --bg:#0f172a; --card:#111827; --text:#e5e7eb; --muted:#94a3b8; --accent:#3b82f6; --ok:#10b981; --err:#ef4444; }
+  *{ box-sizing:border-box }
+  body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:linear-gradient(180deg,#0b1224,#0f172a); color:var(--text); }
+  .wrap{ max-width:760px; margin:40px auto; padding:0 16px; }
+  .card{ background:var(--card); border:1px solid #1f2937; border-radius:14px; padding:20px; box-shadow:0 10px 30px rgba(0,0,0,.35); }
+  h1{ font-size:20px; margin:0 0 12px; display:flex; align-items:center; gap:10px }
+  p{ margin:8px 0; color:var(--muted); font-size:14px }
+  label{ display:block; font-size:12px; color:var(--muted); margin:12px 0 6px }
+  input[type="password"], input[type="text"], textarea{
+    width:100%; padding:12px 13px; border:1px solid #334155; background:#0b1020; color:#e5e7eb; border-radius:10px; font-size:14px;
+  }
+  textarea{ min-height:86px; resize:vertical; }
+  .row{ display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center }
+  .hint{ font-size:12px; color:var(--muted) }
+  .btn{ border:0; background:var(--accent); color:#fff; padding:10px 14px; border-radius:10px; font-weight:700; cursor:pointer }
+  .btn:hover{ filter:brightness(1.1) }
+  .btn-ghost{ border:1px dashed #334155; background:transparent; color:#cbd5e1; padding:8px 12px; border-radius:10px; cursor:pointer }
+  .ok{ color:var(--ok) } .err{ color:var(--err) }
+  .flex{ display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+  .sep{ height:1px; background:#1f2937; margin:16px 0 }
+  code{ background:#0b1020; padding:2px 6px; border-radius:6px; border:1px solid #1f2937 }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>🔐 Generador de hash (SHA-256) para PIN admin</h1>
+      <p>Escribe tu <b>PIN</b> (por ejemplo <code>MiClave2025</code>) y obtén el <b>hash SHA-256</b> para pegar en tu proyecto en la constante <code>ADMIN_HASH</code>.</p>
+
+      <label for="pin">PIN (contraseña)</label>
+      <div class="row">
+        <input id="pin" type="password" placeholder="Escribe tu PIN…" autocomplete="off" />
+        <button class="btn-ghost" id="toggle">👁 Mostrar</button>
+      </div>
+      <div class="flex">
+        <label class="flex" style="gap:6px;"><input type="checkbox" id="trim" checked /> Quitar espacios al inicio/fin (recomendado)</label>
+        <label class="flex" style="gap:6px;"><input type="checkbox" id="lower" checked /> Hash en minúsculas</label>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="flex">
+        <button class="btn" id="gen">Generar hash</button>
+        <span id="status" class="hint"></span>
+      </div>
+
+      <label for="hash">Hash SHA-256</label>
+      <div class="row">
+        <input id="hash" type="text" readonly placeholder="Aquí aparecerá el hash…" />
+        <button class="btn-ghost" id="copy">📋 Copiar</button>
+      </div>
+      <p class="hint">El hash debe tener <b>64 caracteres hexadecimales</b> (0–9, a–f). Pégalo en tu código, por ejemplo:<br>
+        <code>const ADMIN_HASH = "xxxxxxxxxxxxxxxx...";</code>
+      </p>
+
+      <div class="sep"></div>
+
+      <details>
+        <summary>Probar que el PIN coincide con un <code>ADMIN_HASH</code> existente</summary>
+        <p class="hint">Pega aquí tu <code>ADMIN_HASH</code> actual y prueba si el PIN ingresado arriba coincide.</p>
+        <label for="hashCompare">ADMIN_HASH a comparar</label>
+        <input id="hashCompare" type="text" placeholder="Pega aquí tu ADMIN_HASH…" />
+        <div class="flex">
+          <button class="btn-ghost" id="test">✅ Probar coincidencia</button>
+          <span id="match" class="hint"></span>
+        </div>
+      </details>
+    </div>
+  </div>
+
+<script>
+  const pinEl = document.getElementById('pin');
+  const trimEl = document.getElementById('trim');
+  const lowerEl = document.getElementById('lower');
+  const hashEl = document.getElementById('hash');
+  const statusEl = document.getElementById('status');
+  const matchEl = document.getElementById('match');
+
+  document.getElementById('toggle').addEventListener('click', (e)=>{
+    e.preventDefault();
+    pinEl.type = pinEl.type === 'password' ? 'text' : 'password';
+    e.currentTarget.textContent = pinEl.type === 'password' ? '👁 Mostrar' : '🙈 Ocultar';
+  });
+
+  async function sha256Hex(txt){
+    const enc = new TextEncoder().encode(txt);
+    const buf = await crypto.subtle.digest("SHA-256", enc);
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
+  }
+
+  async function generate(){
+    let pin = pinEl.value;
+    if (trimEl.checked) pin = pin.trim();
+    if (!pin){ statusEl.textContent = "Escribe un PIN."; statusEl.className="hint err"; hashEl.value = ""; return; }
+    let hex = await sha256Hex(pin);
+    if (lowerEl.checked) hex = hex.toLowerCase();
+    hashEl.value = hex;
+    statusEl.textContent = "Hash generado ✔";
+    statusEl.className = "hint ok";
+  }
+  document.getElementById('gen').addEventListener('click', generate);
+
+  document.getElementById('copy').addEventListener('click', async ()=>{
+    if (!hashEl.value) { statusEl.textContent = "Nada que copiar."; statusEl.className="hint err"; return; }
+    try { await navigator.clipboard.writeText(hashEl.value); statusEl.textContent = "Hash copiado al portapapeles 📋"; statusEl.className="hint ok"; }
+    catch { statusEl.textContent = "No se pudo copiar."; statusEl.className="hint err"; }
+  });
+
+  document.getElementById('test').addEventListener('click', async ()=>{
+    const h = document.getElementById('hashCompare').value.trim();
+    if (!h){ matchEl.textContent = "Pega un ADMIN_HASH para comparar."; matchEl.className="hint err"; return; }
+    // Genera hash del PIN actual (con mismas normalizaciones)
+    let pin = pinEl.value;
+    if (trimEl.checked) pin = pin.trim();
+    if (!pin){ matchEl.textContent = "Escribe un PIN arriba."; matchEl.className="hint err"; return; }
+    let hex = await sha256Hex(pin);
+    if (lowerEl.checked) hex = hex.toLowerCase();
+    const ok = (hex === h);
+    matchEl.textContent = ok ? "✅ Coincide: ese PIN desbloqueará tu admin." : "❌ No coincide: ese PIN NO desbloqueará tu admin.";
+    matchEl.className = "hint " + (ok ? "ok" : "err");
+  });
+
+  // Enter para generar
+  pinEl.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); generate(); } });
+</script>
+</body>
+</html>

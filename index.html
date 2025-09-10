@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agenda InGaming Provi</title>
+
+  <!-- FullCalendar (global) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/locales-all.global.min.js"></script>
+
+  <!-- Estilos -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- EmailJS -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="title">
+      <img src="img/logo1.png" alt="Logo Municipalidad de Providencia">
+      <span>📅 Agenda de espacio InGaming Provi</span>
+      <img src="img/logo2.png" alt="Logo InGaming Provi">
+    </div>
+    <div class="subtitle">Reserva tu horario de computador</div>
+
+    <!-- Botón para activar el modo admin (pedirá contraseña) -->
+    <button id="openAdmin" class="ghost-btn" type="button">⚙️ Modo admin</button>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="badge" id="fechaBadge">📌 Día no seleccionado</div>
+      <div id="calendar" aria-label="Calendario de reservas"></div>
+    </section>
+
+    <section class="card">
+      <h2>Completa tu reserva</h2>
+      <form id="reservaForm" novalidate>
+        <label for="nombre">Nombre completo</label>
+        <input id="nombre" type="text" required placeholder="Ej: Constanza Riquelme" />
+
+        <label for="rut">RUT</label>
+        <input id="rut" type="text" required placeholder="12.345.678-9" />
+
+        <label for="email">Correo electrónico</label>
+        <input id="email" type="email" required placeholder="correo@dominio.cl" />
+
+        <label for="pc">Selecciona un PC</label>
+        <select id="pc" required>
+          <option value="">— Elegir —</option>
+          <option value="PC-1">PC-1</option>
+          <option value="PC-2">PC-2</option>
+          <option value="PC-3">PC-3</option>
+          <option value="PC-4">PC-4</option>
+          <option value="PC-5">PC-5</option>
+          <option value="PC-6">PC-6</option>
+          <option value="PC-7">PC-7</option>
+          <option value="PC-8">PC-8</option>
+        </select>
+
+        <label for="hora">Selecciona una hora</label>
+        <select id="hora" required>
+          <option value="">— Elige un día primero —</option>
+        </select>
+
+        <div class="terms">
+          <input type="checkbox" id="terms" required />
+          <label for="terms">Acepto los
+            <a href="https://docs.google.com/document/d/1AXmfDk6yPns2M6sLUvAvh6oECrbuwTxbGdrFea29WhM/edit?usp=sharing" target="_blank" rel="noopener">
+              términos y condiciones
+            </a>
+          </label>
+        </div>
+
+        <button type="submit">Reservar</button>
+      </form>
+    </section>
+  </main>
+
+  <!-- Panel Admin (se muestra tras contraseña) -->
+  <section id="adminPanel" class="card admin" hidden>
+    <h2>Panel admin — Horarios por día</h2>
+
+    <div class="row">
+      <div>
+        <label for="admFecha">Fecha</label>
+        <input id="admFecha" type="date" />
+      </div>
+      <div>
+        <label for="admCierre">Cierre a las</label>
+        <select id="admCierre">
+          <option value="">— Sin cierre, usar horario base —</option>
+          <option value="11:00">11:00</option>
+          <option value="12:00">12:00</option>
+          <option value="13:00">13:00</option>
+          <option value="14:00">14:00</option>
+          <option value="15:00">15:00</option>
+          <option value="16:00">16:00</option>
+          <option value="17:00">17:00</option>
+        </select>
+        <div class="hint">Genera slots hasta la hora elegida (excluyente).</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="admBloqueo">Bloquear día completo</label>
+        <input id="admBloqueo" type="checkbox" />
+      </div>
+      <div class="align-end">
+        <button id="admGuardar" type="button">Guardar excepción</button>
+        <button id="admLimpiar" type="button" class="danger">Quitar excepción</button>
+      </div>
+    </div>
+
+    <hr style="margin:16px 0; border:none; border-top:1px solid #eee">
+
+    <div class="row">
+      <div>
+        <button id="admExport" type="button" class="ghost-btn">Exportar excepciones (JSON)</button>
+      </div>
+      <div class="align-end">
+        <input id="admImportFile" type="file" accept="application/json" />
+        <button id="admImport" type="button">Importar</button>
+      </div>
+    </div>
+
+    <p class="hint">
+      Las excepciones se guardan en <strong>este navegador</strong> (localStorage).
+      Puedes exportarlas e importarlas si quieres compartirlas.
+    </p>
+  </section>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- JS -->
+  <script src="js/script.js" defer></script>
+</body>
+</html>
