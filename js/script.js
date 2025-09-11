@@ -1,5 +1,4 @@
 // ====== CONFIG: Admin PIN (hash SHA-256) ======
-// Genera el hash con el generador (hash-generator.html) y pégalo aquí:
 const ADMIN_HASH = "1b5b45ad551e64e179d42862292bb8e79e5c56f34dcf29f322f145ee37316727"; // <-- tu hash
 const ADMIN_OK_KEY = "ingaming_admin_ok";
 
@@ -18,7 +17,7 @@ function saveOverrides(data) {
   localStorage.setItem(LS_OVERRIDES, JSON.stringify(data));
 }
 
-// ====== Helpers de hora/fecha ======
+// ====== Helpers ======
 function toMinutes(hhmm){ const [h,m]=hhmm.split(':').map(Number); return h*60+m; }
 function addOneHour(hhmm){
   const [h,m]=hhmm.split(':').map(Number);
@@ -38,20 +37,24 @@ function getSlotsForDate(dateStr){
   return DEFAULT_SLOTS;
 }
 
-// === FECHAS en LOCAL (arregla el desfase en móviles) ===
+// Fechas locales (fix móviles)
 function dateToYMDLocal(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
-function formatLocalHuman(dateStr) {
-  const [y,m,d] = dateStr.split('-').map(Number);
-  const dd = new Date(y, m-1, d); // Date en LOCAL (no UTC)
-  return dd.toLocaleDateString('es-CL', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+// Resaltar día seleccionado
+function paintSelectedDay(selectedDate){
+  document.querySelectorAll('.fc-daygrid-day.is-selected')
+    .forEach(el => el.classList.remove('is-selected'));
+  if (!selectedDate) return;
+  const cell = document.querySelector(`.fc-daygrid-day[data-date="${selectedDate}"]`);
+  if (cell) cell.classList.add('is-selected');
 }
 
-// ====== Toast UI ======
+// ====== Toast ======
 function showToast(msg, type='ok'){
   const t = document.getElementById('toast');
   if (!t){ alert(msg); return; }
@@ -71,7 +74,7 @@ async function ensureAdmin(){
   if (localStorage.getItem(ADMIN_OK_KEY) === ADMIN_HASH) return true;
   const ingreso = prompt('🔐 Ingresa la contraseña del panel admin:');
   if (ingreso === null) return false;
-  const pin = ingreso.trim();            // normaliza (evita espacios)
+  const pin = ingreso.trim();
   const hash = await sha256Hex(pin);
   if (hash === ADMIN_HASH){
     localStorage.setItem(ADMIN_OK_KEY, ADMIN_HASH);
@@ -83,15 +86,9 @@ async function ensureAdmin(){
 
 // ====== DOM Ready ======
 document.addEventListener('DOMContentLoaded', function () {
-  // ===== Calendario =====
-  if (!window.FullCalendar){
-    showToast('FullCalendar no cargó. Revisa los <script> del <head>.', 'err');
-    return;
-  }
-
-  let selectedDate = null; // YYYY-MM-DD (LOCAL)
+  let selectedDate = null;
   const today = new Date(); today.setHours(0,0,0,0);
-  const todayStr = dateToYMDLocal(today); // LOCAL, no UTC
+  const todayStr = dateToYMDLocal(today);
 
   const calendarEl = document.getElementById('calendar');
   const badgeEl = document.getElementById('fechaBadge');
@@ -116,23 +113,24 @@ document.addEventListener('DOMContentLoaded', function () {
     firstDay: 1,
     selectable: true,
     locale: 'es',
-    timeZone: 'local',                 // 🔧 clave para móviles
-    validRange: { start: todayStr },   // 🔧 usar LOCAL, no toISOString()
+    timeZone: 'local',
+    validRange: { start: todayStr },
     headerToolbar: { left: 'prev,next', center: 'title', right: 'today' },
+    datesSet(){ paintSelectedDay(selectedDate); },
     dateClick: function(info){
-      // info.date ya es Date en LOCAL → convertir a YYYY-MM-DD local
       selectedDate = dateToYMDLocal(info.date);
-
       if (badgeEl){
         badgeEl.textContent = '📌 Día seleccionado: ' + info.date.toLocaleDateString('es-CL', {
           weekday:'long', year:'numeric', month:'long', day:'numeric'
         });
       }
       setHourOptions(selectedDate);
+      paintSelectedDay(selectedDate);
     }
   });
 
   calendar.render();
+  paintSelectedDay(selectedDate);
 
   // ===== Formulario =====
   const form = document.getElementById('reservaForm');
@@ -153,7 +151,7 @@ document.addEventListener('DOMContentLoaded', function () {
       email:  document.getElementById('email').value.trim(),
       pc:     document.getElementById('pc').value,
       hora:   document.getElementById('hora').value,
-      fecha:  selectedDate // YYYY-MM-DD local
+      fecha:  selectedDate
     };
 
     try{
@@ -163,13 +161,14 @@ document.addEventListener('DOMContentLoaded', function () {
       selectedDate = null;
       horaSel.innerHTML = `<option value="">— Elige un día primero —</option>`;
       if (badgeEl) badgeEl.textContent = '📌 Día no seleccionado';
+      paintSelectedDay(null);
     } catch(err){
       console.error(err);
       showToast('Error al enviar la reserva. Revisa EmailJS.', 'err');
     }
   });
 
-  // ===== Panel Admin (misma página, protegido) =====
+  // ===== Panel Admin =====
   const adminPanel = document.getElementById('adminPanel');
   const openAdminBtn = document.getElementById('openAdmin');
   const admFecha   = document.getElementById('admFecha');
@@ -189,20 +188,18 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   admGuardar.addEventListener('click', () => {
-    const d = admFecha.value; // YYYY-MM-DD del input
+    const d = admFecha.value;
     if (!d){ showToast('Elige una fecha para guardar la excepción.', 'err'); return; }
-
     const overrides = loadOverrides();
     if (admBloqueo.checked){
       overrides[d] = { blocked: true };
     } else if (admCierre.value){
       overrides[d] = { blocked: false, cutoff: admCierre.value };
     } else {
-      overrides[d] = {}; // horario base
+      overrides[d] = {};
     }
     saveOverrides(overrides);
     showToast('Excepción guardada ✅');
-
     if (d === (selectedDate || '')) setHourOptions(selectedDate);
   });
 
