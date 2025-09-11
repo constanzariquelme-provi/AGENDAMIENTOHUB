@@ -1,108 +1,102 @@
-// ====== CONFIG: Admin PIN (hash SHA-256) ======
-const ADMIN_HASH = "1b5b45ad551e64e179d42862292bb8e79e5c56f34dcf29f322f145ee37316727"; // <-- tu hash
+/***** CONFIG *****/
+const API_URL = 'https://script.google.com/macros/s/AKfycbzLRuoTCvwVVLe7ty09dgLAzUKgv9RLFbhGPiH9sSkHpD2bCRlMQvQpUFmJQtXGQtWL-A/exec'; // <- ej: https://script.google.com/macros/s/XXXX/exec
+const ADMIN_HASH = "1b5b45ad551e64e179d42862292bb8e79e5c56f34dcf29f322f145ee37316727";
 const ADMIN_OK_KEY = "ingaming_admin_ok";
-
-// ====== EmailJS ======
 emailjs.init('jxwzhEr3QA9TW95Js'); // tu Public Key
 
-// ====== Horarios base & overrides ======
+/***** Horarios base *****/
 const DEFAULT_SLOTS = ["10:00","11:00","12:00","13:00","15:00","16:00"];
-const LS_OVERRIDES = 'ingaming_overrides';
 
-function loadOverrides() {
-  try { return JSON.parse(localStorage.getItem(LS_OVERRIDES)) || {}; }
-  catch { return {}; }
-}
-function saveOverrides(data) {
-  localStorage.setItem(LS_OVERRIDES, JSON.stringify(data));
-}
-
-// ====== Helpers ======
+/***** Helpers *****/
 function toMinutes(hhmm){ const [h,m]=hhmm.split(':').map(Number); return h*60+m; }
-function addOneHour(hhmm){
-  const [h,m]=hhmm.split(':').map(Number);
-  const d=new Date(0,0,0,h,m); d.setHours(d.getHours()+1);
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+function addOneHour(hhmm){ const [h,m]=hhmm.split(':').map(Number); const d=new Date(0,0,0,h,m); d.setHours(d.getHours()+1); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+function buildSlotsUntilCutoff(cutoff){ const limit = toMinutes(cutoff); return DEFAULT_SLOTS.filter(t => toMinutes(t) < limit); }
+function dateToYMDLocal(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; }
+function paintSelectedDay(selectedDate){ document.querySelectorAll('.fc-daygrid-day.is-selected').forEach(el=>el.classList.remove('is-selected')); if (!selectedDate) return; const cell=document.querySelector(`.fc-daygrid-day[data-date="${selectedDate}"]`); if(cell) cell.classList.add('is-selected'); }
+function showToast(msg,type='ok'){ const t=document.getElementById('toast'); if(!t){ alert(msg); return;} t.textContent=msg; t.className='toast show '+(type==='err'?'err':'ok'); setTimeout(()=>{ t.className='toast'; }, 3200); }
+async function sha256Hex(txt){ const enc=new TextEncoder().encode(txt); const buf=await crypto.subtle.digest("SHA-256",enc); return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join(""); }
+
+/***** Estado en memoria *****/
+let selectedDate = null;                  // YYYY-MM-DD
+let dayReservations = {};                 // { 'PC-1': ['10:00', ...], ... }
+let dayOverride = {};                     // { cutoff?: '14:00', blocked?: true }
+
+/***** API calls *****/
+async function apiGetDay(dateStr){
+  const url = `${API_URL}?action=getDay&date=${encodeURIComponent(dateStr)}`;
+  const res = await fetch(url, { method:'GET' });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Error API');
+  dayReservations = data.reservations || {};
+  dayOverride = data.override || {};
 }
-function buildSlotsUntilCutoff(cutoff){
-  const limit = toMinutes(cutoff);
-  return DEFAULT_SLOTS.filter(t => toMinutes(t) < limit);
+async function apiReserve(payload){
+  const res = await fetch(API_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ action:'reserve', ...payload })
+  });
+  const data = await res.json();
+  return data;
 }
-function getSlotsForDate(dateStr){
-  const ov = loadOverrides()[dateStr];
-  if (!ov) return DEFAULT_SLOTS;
-  if (ov.blocked) return [];
-  if (ov.slots && Array.isArray(ov.slots) && ov.slots.length) return ov.slots;
-  if (ov.cutoff) return buildSlotsUntilCutoff(ov.cutoff);
-  return DEFAULT_SLOTS;
+async function apiSetOverride(dateStr, cutoff, blocked){
+  const res = await fetch(API_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ action:'setOverride', fecha: dateStr, cutoff, blocked })
+  });
+  return res.json();
+}
+async function apiClearOverride(dateStr){
+  const res = await fetch(API_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ action:'clearOverride', fecha: dateStr })
+  });
+  return res.json();
 }
 
-// Fechas locales (fix móviles)
-function dateToYMDLocal(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-// Resaltar día seleccionado
-function paintSelectedDay(selectedDate){
-  document.querySelectorAll('.fc-daygrid-day.is-selected')
-    .forEach(el => el.classList.remove('is-selected'));
-  if (!selectedDate) return;
-  const cell = document.querySelector(`.fc-daygrid-day[data-date="${selectedDate}"]`);
-  if (cell) cell.classList.add('is-selected');
-}
-
-// ====== Toast ======
-function showToast(msg, type='ok'){
-  const t = document.getElementById('toast');
-  if (!t){ alert(msg); return; }
-  t.textContent = msg;
-  t.className = 'toast show ' + (type==='err' ? 'err' : 'ok');
-  setTimeout(()=>{ t.className='toast'; }, 3500);
-}
-
-// ====== Admin gate ======
-async function sha256Hex(txt){
-  const enc = new TextEncoder().encode(txt);
-  const buf = await crypto.subtle.digest("SHA-256", enc);
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
-}
-
+/***** Admin gate *****/
 async function ensureAdmin(){
   if (localStorage.getItem(ADMIN_OK_KEY) === ADMIN_HASH) return true;
   const ingreso = prompt('🔐 Ingresa la contraseña del panel admin:');
   if (ingreso === null) return false;
   const pin = ingreso.trim();
   const hash = await sha256Hex(pin);
-  if (hash === ADMIN_HASH){
-    localStorage.setItem(ADMIN_OK_KEY, ADMIN_HASH);
-    return true;
-  }
-  alert('Contraseña incorrecta');
-  return false;
+  if (hash === ADMIN_HASH){ localStorage.setItem(ADMIN_OK_KEY, ADMIN_HASH); return true; }
+  alert('Contraseña incorrecta'); return false;
 }
 
-// ====== DOM Ready ======
+/***** DOM Ready *****/
 document.addEventListener('DOMContentLoaded', function () {
-  let selectedDate = null;
   const today = new Date(); today.setHours(0,0,0,0);
   const todayStr = dateToYMDLocal(today);
 
   const calendarEl = document.getElementById('calendar');
   const badgeEl = document.getElementById('fechaBadge');
   const horaSel = document.getElementById('hora');
+  const pcSel = document.getElementById('pc');
+
+  function computeSlotsForDay(){
+    if (dayOverride.blocked) return [];
+    if (dayOverride.cutoff) return buildSlotsUntilCutoff(dayOverride.cutoff);
+    return DEFAULT_SLOTS.slice();
+  }
 
   function setHourOptions(dateStr){
     horaSel.innerHTML = '';
-    const slots = getSlotsForDate(dateStr);
-    if (!slots.length){
+    const base = computeSlotsForDay();            // por override
+    const pc = pcSel.value;
+    let taken = [];
+    if (pc) taken = (dayReservations[pc] || []);
+    const available = base.filter(t => !taken.includes(t));
+
+    if (!available.length){
       horaSel.innerHTML = `<option value="">— Sin horarios disponibles —</option>`;
       return;
     }
     horaSel.insertAdjacentHTML('beforeend', `<option value="">— Elegir —</option>`);
-    for (const t of slots){
+    for (const t of available){
       horaSel.insertAdjacentHTML('beforeend', `<option value="${t}">${t} – ${addOneHour(t)}</option>`);
     }
   }
@@ -117,20 +111,31 @@ document.addEventListener('DOMContentLoaded', function () {
     validRange: { start: todayStr },
     headerToolbar: { left: 'prev,next', center: 'title', right: 'today' },
     datesSet(){ paintSelectedDay(selectedDate); },
-    dateClick: function(info){
+    dateClick: async function(info){
       selectedDate = dateToYMDLocal(info.date);
       if (badgeEl){
         badgeEl.textContent = '📌 Día seleccionado: ' + info.date.toLocaleDateString('es-CL', {
           weekday:'long', year:'numeric', month:'long', day:'numeric'
         });
       }
-      setHourOptions(selectedDate);
-      paintSelectedDay(selectedDate);
+      try{
+        await apiGetDay(selectedDate); // carga reservas + override del día
+        setHourOptions(selectedDate);
+        paintSelectedDay(selectedDate);
+      } catch(err){
+        console.error(err);
+        showToast('Error cargando disponibilidad.', 'err');
+      }
     }
   });
 
   calendar.render();
   paintSelectedDay(selectedDate);
+
+  // Cuando cambia el PC, recalculamos horas disponibles
+  pcSel.addEventListener('change', () => {
+    if (selectedDate) setHourOptions(selectedDate);
+  });
 
   // ===== Formulario =====
   const form = document.getElementById('reservaForm');
@@ -141,30 +146,44 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!document.getElementById('terms').checked){
       showToast('Debes aceptar los términos y condiciones.', 'err'); return;
     }
-    if (!getSlotsForDate(selectedDate).length){
-      showToast('No hay horarios disponibles para ese día.', 'err'); return;
-    }
+    if (!pcSel.value){ showToast('Selecciona un PC.', 'err'); return; }
+    if (!horaSel.value){ showToast('Selecciona una hora.', 'err'); return; }
 
-    const templateParams = {
+    const payload = {
+      fecha: selectedDate,
+      hora:  horaSel.value,
+      pc:    pcSel.value,
       nombre: document.getElementById('nombre').value.trim(),
       rut:    document.getElementById('rut').value.trim(),
-      email:  document.getElementById('email').value.trim(),
-      pc:     document.getElementById('pc').value,
-      hora:   document.getElementById('hora').value,
-      fecha:  selectedDate
+      email:  document.getElementById('email').value.trim()
     };
 
     try{
-      await emailjs.send('service_lsd9y3g', 'template_mbrl6e1', templateParams);
-      showToast('✅ Reserva enviada con éxito');
+      const resp = await apiReserve(payload);
+      if (!resp.ok && resp.conflict){
+        showToast('Ese cupo acaba de ocuparse. Elige otro.', 'err');
+        // refrescamos estado del día
+        await apiGetDay(selectedDate);
+        setHourOptions(selectedDate);
+        return;
+      }
+      if (!resp.ok){ throw new Error(resp.error || 'Error al reservar'); }
+
+      // correo de confirmación (opcional)
+      try {
+        await emailjs.send('service_lsd9y3g', 'template_mbrl6e1', payload);
+      } catch {}
+
+      showToast('✅ Reserva registrada');
+      // Refresca las horas para que desaparezca el cupo recién tomado
+      await apiGetDay(selectedDate);
+      setHourOptions(selectedDate);
       form.reset();
-      selectedDate = null;
-      horaSel.innerHTML = `<option value="">— Elige un día primero —</option>`;
-      if (badgeEl) badgeEl.textContent = '📌 Día no seleccionado';
-      paintSelectedDay(null);
+      document.getElementById('terms').checked = false;
+      paintSelectedDay(selectedDate);
     } catch(err){
       console.error(err);
-      showToast('Error al enviar la reserva. Revisa EmailJS.', 'err');
+      showToast('No se pudo completar la reserva.', 'err');
     }
   });
 
@@ -176,9 +195,6 @@ document.addEventListener('DOMContentLoaded', function () {
   const admBloqueo = document.getElementById('admBloqueo');
   const admGuardar = document.getElementById('admGuardar');
   const admLimpiar = document.getElementById('admLimpiar');
-  const admExport  = document.getElementById('admExport');
-  const admImpFile = document.getElementById('admImportFile');
-  const admImport  = document.getElementById('admImport');
 
   openAdminBtn.addEventListener('click', async ()=>{
     const ok = await ensureAdmin();
@@ -187,54 +203,29 @@ document.addEventListener('DOMContentLoaded', function () {
     openAdminBtn.textContent = adminPanel.hidden ? '⚙️ Modo admin' : '⬆️ Ocultar admin';
   });
 
-  admGuardar.addEventListener('click', () => {
+  admGuardar.addEventListener('click', async () => {
     const d = admFecha.value;
-    if (!d){ showToast('Elige una fecha para guardar la excepción.', 'err'); return; }
-    const overrides = loadOverrides();
-    if (admBloqueo.checked){
-      overrides[d] = { blocked: true };
-    } else if (admCierre.value){
-      overrides[d] = { blocked: false, cutoff: admCierre.value };
-    } else {
-      overrides[d] = {};
-    }
-    saveOverrides(overrides);
+    if (!d){ showToast('Elige una fecha.', 'err'); return; }
+    const cut = admCierre.value || '';
+    const blocked = admBloqueo.checked ? true : false;
+    const res = await apiSetOverride(d, cut, blocked);
+    if (!res.ok){ showToast('Error guardando excepción', 'err'); return; }
     showToast('Excepción guardada ✅');
-    if (d === (selectedDate || '')) setHourOptions(selectedDate);
+    if (d === selectedDate){
+      await apiGetDay(selectedDate);
+      setHourOptions(selectedDate);
+    }
   });
 
-  admLimpiar.addEventListener('click', () => {
+  admLimpiar.addEventListener('click', async () => {
     const d = admFecha.value;
-    if (!d){ showToast('Elige una fecha para quitar la excepción.', 'err'); return; }
-    const overrides = loadOverrides();
-    delete overrides[d];
-    saveOverrides(overrides);
+    if (!d){ showToast('Elige una fecha.', 'err'); return; }
+    const res = await apiClearOverride(d);
+    if (!res.ok){ showToast('Error quitando excepción', 'err'); return; }
     showToast('Excepción eliminada 🗑️');
-    if (d === (selectedDate || '')) setHourOptions(selectedDate);
-  });
-
-  admExport.addEventListener('click', () => {
-    const data = loadOverrides();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'excepciones_ingaming.json'; a.click();
-    URL.revokeObjectURL(url);
-  });
-
-  admImport.addEventListener('click', async () => {
-    const file = admImpFile.files?.[0];
-    if (!file){ showToast('Selecciona un archivo JSON para importar.', 'err'); return; }
-    try{
-      const text = await file.text();
-      const data = JSON.parse(text);
-      if (typeof data !== 'object' || Array.isArray(data)) throw new Error('Formato inválido');
-      saveOverrides(data);
-      showToast('Excepciones importadas ✅');
-      if (selectedDate) setHourOptions(selectedDate);
-    } catch(e){
-      console.error(e);
-      showToast('Archivo inválido. Debe ser JSON.', 'err');
+    if (d === selectedDate){
+      await apiGetDay(selectedDate);
+      setHourOptions(selectedDate);
     }
   });
 });
