@@ -1,7 +1,6 @@
 // ====== CONFIG: Admin PIN (hash SHA-256) ======
-// Genera el hash con el generador que hicimos (hash-generator.html)
-// y pégalo aquí en ADMIN_HASH.
-const ADMIN_HASH = "1b5b45ad551e64e179d42862292bb8e79e5c56f34dcf29f322f145ee37316727";  
+// Genera el hash con el generador (hash-generator.html) y pégalo aquí:
+const ADMIN_HASH = "1b5b45ad551e64e179d42862292bb8e79e5c56f34dcf29f322f145ee37316727"; // <-- tu hash
 const ADMIN_OK_KEY = "ingaming_admin_ok";
 
 // ====== EmailJS ======
@@ -19,7 +18,7 @@ function saveOverrides(data) {
   localStorage.setItem(LS_OVERRIDES, JSON.stringify(data));
 }
 
-// Helpers horarios
+// ====== Helpers de hora/fecha ======
 function toMinutes(hhmm){ const [h,m]=hhmm.split(':').map(Number); return h*60+m; }
 function addOneHour(hhmm){
   const [h,m]=hhmm.split(':').map(Number);
@@ -39,6 +38,19 @@ function getSlotsForDate(dateStr){
   return DEFAULT_SLOTS;
 }
 
+// === FECHAS en LOCAL (arregla el desfase en móviles) ===
+function dateToYMDLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function formatLocalHuman(dateStr) {
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dd = new Date(y, m-1, d); // Date en LOCAL (no UTC)
+  return dd.toLocaleDateString('es-CL', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+}
+
 // ====== Toast UI ======
 function showToast(msg, type='ok'){
   const t = document.getElementById('toast');
@@ -56,16 +68,11 @@ async function sha256Hex(txt){
 }
 
 async function ensureAdmin(){
-  // sesión ya validada
   if (localStorage.getItem(ADMIN_OK_KEY) === ADMIN_HASH) return true;
-
   const ingreso = prompt('🔐 Ingresa la contraseña del panel admin:');
   if (ingreso === null) return false;
-
-  // normaliza lo que escribe el usuario
-  const pin = ingreso.trim();  
+  const pin = ingreso.trim();            // normaliza (evita espacios)
   const hash = await sha256Hex(pin);
-
   if (hash === ADMIN_HASH){
     localStorage.setItem(ADMIN_OK_KEY, ADMIN_HASH);
     return true;
@@ -82,8 +89,9 @@ document.addEventListener('DOMContentLoaded', function () {
     return;
   }
 
-  let selectedDate = null;
+  let selectedDate = null; // YYYY-MM-DD (LOCAL)
   const today = new Date(); today.setHours(0,0,0,0);
+  const todayStr = dateToYMDLocal(today); // LOCAL, no UTC
 
   const calendarEl = document.getElementById('calendar');
   const badgeEl = document.getElementById('fechaBadge');
@@ -108,15 +116,17 @@ document.addEventListener('DOMContentLoaded', function () {
     firstDay: 1,
     selectable: true,
     locale: 'es',
-    validRange: { start: today.toISOString().slice(0,10) },
+    timeZone: 'local',                 // 🔧 clave para móviles
+    validRange: { start: todayStr },   // 🔧 usar LOCAL, no toISOString()
     headerToolbar: { left: 'prev,next', center: 'title', right: 'today' },
     dateClick: function(info){
-      selectedDate = info.dateStr;
+      // info.date ya es Date en LOCAL → convertir a YYYY-MM-DD local
+      selectedDate = dateToYMDLocal(info.date);
+
       if (badgeEl){
-        badgeEl.textContent = '📌 Día seleccionado: ' +
-          new Date(selectedDate).toLocaleDateString('es-CL', {
-            weekday:'long', year:'numeric', month:'long', day:'numeric'
-          });
+        badgeEl.textContent = '📌 Día seleccionado: ' + info.date.toLocaleDateString('es-CL', {
+          weekday:'long', year:'numeric', month:'long', day:'numeric'
+        });
       }
       setHourOptions(selectedDate);
     }
@@ -143,7 +153,7 @@ document.addEventListener('DOMContentLoaded', function () {
       email:  document.getElementById('email').value.trim(),
       pc:     document.getElementById('pc').value,
       hora:   document.getElementById('hora').value,
-      fecha:  selectedDate
+      fecha:  selectedDate // YYYY-MM-DD local
     };
 
     try{
@@ -179,7 +189,7 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   admGuardar.addEventListener('click', () => {
-    const d = admFecha.value;
+    const d = admFecha.value; // YYYY-MM-DD del input
     if (!d){ showToast('Elige una fecha para guardar la excepción.', 'err'); return; }
 
     const overrides = loadOverrides();
